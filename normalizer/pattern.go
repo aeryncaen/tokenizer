@@ -125,7 +125,7 @@ func buildMatchesFromIndices(matches [][]int, inside string) []OffsetsMatch {
 
 	var (
 		currIndex int = 0
-		subs      []OffsetsMatch
+		subs          = make([]OffsetsMatch, 0, len(matches)*2+1)
 	)
 
 	// 1. Sub before matched if any
@@ -227,6 +227,18 @@ type RegexpPattern struct {
 }
 
 func NewRegexpPattern(s string) *RegexpPattern {
+	// Accuracy-first path: use regexp2 (supports lookarounds used by modern
+	// tokenizer regex patterns, e.g. Qwen).
+	re2, err2 := regexp2.Compile(s, 0)
+	if err2 == nil {
+		return &RegexpPattern{
+			re2:    re2,
+			useRe2: true,
+			source: s,
+		}
+	}
+
+	// Fallback to Go regexp for patterns regexp2 fails to parse.
 	re, err := regexp.Compile(s)
 	if err == nil {
 		return &RegexpPattern{
@@ -236,16 +248,11 @@ func NewRegexpPattern(s string) *RegexpPattern {
 		}
 	}
 
-	// Fallback for constructs unsupported by Go regexp (e.g. lookaheads).
-	re2, err2 := regexp2.Compile(s, regexp2.RE2)
 	if err2 != nil {
-		panic(err)
+		panic(err2)
 	}
-	return &RegexpPattern{
-		re2:    re2,
-		useRe2: true,
-		source: s,
-	}
+
+	panic(err)
 }
 
 // FindMatches implements Pattern interface for RegexpPattern

@@ -7,7 +7,6 @@ import (
 	"sort"
 	"unicode"
 
-	"github.com/sugarme/regexpset"
 	"github.com/sugarme/tokenizer/normalizer"
 )
 
@@ -180,9 +179,8 @@ func isWordCharacter(r rune) bool {
 
 // matchingSet is a set of regular expression string
 type matchingSet struct {
-	regexSet regexpset.RegexpSet
-	ids      []int
-	regexps  []*regexp.Regexp
+	ids     []int
+	regexps []*regexp.Regexp
 }
 
 // AddedVocabulary is a vocabulary built on top of the Model
@@ -347,15 +345,6 @@ func (av *AddedVocabulary) refreshAddedTokens(model Model, normalizer normalizer
 		}
 	}
 
-	normSet, err := regexpset.NewRegexpSet(normPatterns)
-	if err != nil {
-		log.Fatal(err)
-	}
-	nnormSet, err := regexpset.NewRegexpSet(nnormPatterns)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	normRegexps := make([]*regexp.Regexp, len(normPatterns))
 	for i, p := range normPatterns {
 		normRegexps[i] = regexp.MustCompile(p)
@@ -366,8 +355,8 @@ func (av *AddedVocabulary) refreshAddedTokens(model Model, normalizer normalizer
 		nnormRegexps[i] = regexp.MustCompile(p)
 	}
 
-	av.splitNormalizedRe = matchingSet{*normSet, normIds, normRegexps}
-	av.splitRe = matchingSet{*nnormSet, nnormIds, nnormRegexps}
+	av.splitNormalizedRe = matchingSet{normIds, normRegexps}
+	av.splitRe = matchingSet{nnormIds, nnormRegexps}
 }
 
 type idOffsets struct {
@@ -401,11 +390,9 @@ func (av *AddedVocabulary) findMatches(sentence string, splitRe matchingSet) (re
 		return []idOffsets{{-1, []int{0, 0}}}
 	}
 
-	matches := splitRe.regexSet.Matches(sentence).Matches()
-	var ioPairs []idOffsets
+	ioPairs := make([]idOffsets, 0, len(splitRe.regexps)*2)
 
-	for _, idx := range matches {
-		r := splitRe.regexps[idx]
+	for idx, r := range splitRe.regexps {
 		locs := r.FindAllStringIndex(sentence, -1)
 		for _, loc := range locs {
 			id := idx
@@ -427,9 +414,9 @@ func (av *AddedVocabulary) findMatches(sentence string, splitRe matchingSet) (re
 
 	// Select matches greedily. With sort(start, id), overlapping ties pick lowest id.
 	var (
-		i              int         = 0
-		currentOffsets int         = 0
-		splits         []idOffsets = make([]idOffsets, 0)
+		i              int = 0
+		currentOffsets int = 0
+		splits             = make([]idOffsets, 0, len(ioPairs))
 	)
 
 	for i < len(ioPairs) {
@@ -449,7 +436,7 @@ func (av *AddedVocabulary) findMatches(sentence string, splitRe matchingSet) (re
 	// Also, insert the splits in-between added tokens, to split the entire string
 	var (
 		startOffset int = 0
-		finalSplits []idOffsets
+		finalSplits     = make([]idOffsets, 0, len(splits)*2+1)
 	)
 
 	for _, ioPair := range splits {
@@ -505,6 +492,9 @@ func (av *AddedVocabulary) splitWithIndices(sentence *normalizer.NormalizedStrin
 // input sentence `I read a book Yesterday`, if the normalizer is supposed to lowercase
 // everything, we expect a match.
 func (av *AddedVocabulary) ExtractAndNormalize(sequence string, n normalizer.Normalizer) *PreTokenizedString {
+	if len(av.splitRe.regexps) == 0 && len(av.splitNormalizedRe.regexps) == 0 {
+		return NewPreTokenizedString(sequence)
+	}
 
 	pretokenized := NewPreTokenizedString(sequence)
 

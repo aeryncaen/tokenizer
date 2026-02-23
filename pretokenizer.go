@@ -72,14 +72,24 @@ type SplitFn func(int, *normalizer.NormalizedString) []SplitIdx
 // func (pt *PreTokenizedString) Split(splitFn SplitFn) *PreTokenizedString {
 func (pt *PreTokenizedString) Split(splitFn SplitFn) *PreTokenizedString {
 
-	var newSplits []Split
+	newSplits := make([]Split, 0, len(pt.splits))
 	for i, originalSplit := range pt.splits {
 		if originalSplit.tokens != nil {
 			newSplits = append(newSplits, originalSplit)
 			continue
 		}
 
-		for _, splitIdx := range splitFn(i, originalSplit.normalized) {
+		splitIdxs := splitFn(i, originalSplit.normalized)
+		if cap(newSplits)-len(newSplits) < len(splitIdxs) {
+			grow := len(splitIdxs)
+			if grow < len(pt.splits) {
+				grow = len(pt.splits)
+			}
+			tmp := make([]Split, len(newSplits), len(newSplits)+grow)
+			copy(tmp, newSplits)
+			newSplits = tmp
+		}
+		for _, splitIdx := range splitIdxs {
 			if splitIdx.Normalized.GetNormalized() != "" {
 				// split := NewSplit(splitIdx.Normalized, splitIdx.Tokens)
 				split := Split{
@@ -99,7 +109,7 @@ func (pt *PreTokenizedString) Split(splitFn SplitFn) *PreTokenizedString {
 // using the provided `normalize` function.
 func (pt *PreTokenizedString) Normalize(nFn func(*normalizer.NormalizedString) *normalizer.NormalizedString) *PreTokenizedString {
 
-	var nSplits []Split
+	nSplits := make([]Split, 0, len(pt.splits))
 
 	for _, split := range pt.splits {
 		if split.tokens == nil {
@@ -116,7 +126,7 @@ func (pt *PreTokenizedString) Normalize(nFn func(*normalizer.NormalizedString) *
 // Tokenize tokenizes all the splits that do not have attached `Tokens`, using the provided
 // `tokenize` function
 func (pt *PreTokenizedString) Tokenize(tokFn func(*normalizer.NormalizedString) ([]Token, error)) (*PreTokenizedString, error) {
-	var nSplits []Split
+	nSplits := make([]Split, 0, len(pt.splits))
 
 	for _, split := range pt.splits {
 		newSplit := split

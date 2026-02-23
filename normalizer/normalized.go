@@ -402,6 +402,9 @@ func (n *NormalizedString) Slice(inputRange *Range) (retVal *NormalizedString) {
 		sOriginalShift                   int
 	)
 
+	sAlignments = make([][]int, 0, nRange.end-nRange.start)
+	sAlignmentsOriginal = make([][]int, 0, oRange.end-oRange.start)
+
 	sOriginal = n.RangeOriginal(fullRange)
 	sNormalized = n.Range(fullRange)
 	for _, a := range n.alignments[nRange.start:nRange.end] {
@@ -1196,6 +1199,7 @@ func (n *NormalizedString) Split(pattern Pattern, behavior SplitDelimiterBehavio
 	// Process the matches according to the selected behavior: []OfssetsMatch
 	// where `Match` field is `shouldRemove`
 	var splits []OffsetsMatch
+	splits = make([]OffsetsMatch, 0, len(matches))
 	switch behavior {
 	case IsolatedBehavior:
 		for _, m := range matches {
@@ -1206,7 +1210,7 @@ func (n *NormalizedString) Split(pattern Pattern, behavior SplitDelimiterBehavio
 		splits = matches
 	case MergedWithPreviousBehavior:
 		previousMatch := false
-		var acc []OffsetsMatch
+		acc := make([]OffsetsMatch, 0, len(matches))
 		for _, m := range matches {
 			if m.Match && !previousMatch {
 				if len(acc) > 0 {
@@ -1224,7 +1228,7 @@ func (n *NormalizedString) Split(pattern Pattern, behavior SplitDelimiterBehavio
 		splits = acc
 	case ContiguousBehavior:
 		previousMatch := false
-		var acc []OffsetsMatch
+		acc := make([]OffsetsMatch, 0, len(matches))
 		for _, m := range matches {
 			if m.Match == previousMatch {
 				if len(acc) > 0 {
@@ -1243,7 +1247,7 @@ func (n *NormalizedString) Split(pattern Pattern, behavior SplitDelimiterBehavio
 
 	case MergedWithNextBehavior:
 		previousMatch := false
-		var acc []OffsetsMatch
+		acc := make([]OffsetsMatch, 0, len(matches))
 		// iterate reversively
 		for i := len(matches) - 1; i >= 0; i-- {
 			m := matches[i]
@@ -1268,7 +1272,7 @@ func (n *NormalizedString) Split(pattern Pattern, behavior SplitDelimiterBehavio
 	}
 
 	// Then split according to the computed splits
-	var slices []NormalizedString
+	slices := make([]NormalizedString, 0, len(splits))
 	for _, split := range splits {
 		if !split.Match {
 			slice := n.Slice(NewRange(split.Offsets[0], split.Offsets[1], NormalizedTarget))
