@@ -182,6 +182,7 @@ func isWordCharacter(r rune) bool {
 type matchingSet struct {
 	regexSet regexpset.RegexpSet
 	ids      []int
+	regexps  []*regexp.Regexp
 }
 
 // AddedVocabulary is a vocabulary built on top of the Model
@@ -355,8 +356,18 @@ func (av *AddedVocabulary) refreshAddedTokens(model Model, normalizer normalizer
 		log.Fatal(err)
 	}
 
-	av.splitNormalizedRe = matchingSet{*normSet, normIds}
-	av.splitRe = matchingSet{*nnormSet, nnormIds}
+	normRegexps := make([]*regexp.Regexp, len(normPatterns))
+	for i, p := range normPatterns {
+		normRegexps[i] = regexp.MustCompile(p)
+	}
+
+	nnormRegexps := make([]*regexp.Regexp, len(nnormPatterns))
+	for i, p := range nnormPatterns {
+		nnormRegexps[i] = regexp.MustCompile(p)
+	}
+
+	av.splitNormalizedRe = matchingSet{*normSet, normIds, normRegexps}
+	av.splitRe = matchingSet{*nnormSet, nnormIds, nnormRegexps}
 }
 
 type idOffsets struct {
@@ -394,7 +405,7 @@ func (av *AddedVocabulary) findMatches(sentence string, splitRe matchingSet) (re
 	var ioPairs []idOffsets
 
 	for _, idx := range matches {
-		r := regexp.MustCompile(splitRe.regexSet.Patterns()[idx])
+		r := splitRe.regexps[idx]
 		locs := r.FindAllStringIndex(sentence, -1)
 		for _, loc := range locs {
 			id := idx
@@ -403,11 +414,18 @@ func (av *AddedVocabulary) findMatches(sentence string, splitRe matchingSet) (re
 		}
 	}
 
-	// Sort id-offsets by start then by pattern id
-	sort.Sort(byStart(ioPairs))
-	sort.Sort(byId(ioPairs))
+	// Sort id-offsets by start, then by pattern id.
+	sort.Slice(ioPairs, func(i, j int) bool {
+		if ioPairs[i].offsets[0] != ioPairs[j].offsets[0] {
+			return ioPairs[i].offsets[0] < ioPairs[j].offsets[0]
+		}
+		if ioPairs[i].offsets[1] != ioPairs[j].offsets[1] {
+			return ioPairs[i].offsets[1] < ioPairs[j].offsets[1]
+		}
+		return ioPairs[i].id < ioPairs[j].id
+	})
 
-	// Select the matches, if they overlap, keep them
+	// Select matches greedily. With sort(start, id), overlapping ties pick lowest id.
 	var (
 		i              int         = 0
 		currentOffsets int         = 0
@@ -423,20 +441,6 @@ func (av *AddedVocabulary) findMatches(sentence string, splitRe matchingSet) (re
 			continue
 		}
 
-		// Find out whether having overlapping neighbours.
-		// If so, keep the one with lowest Idx. All other will be skipped
-		// because `currentOffsets` will have been increased.
-		if i+1 < len(ioPairs) {
-			overlapPairs := ioPairs[i:]
-			sort.Sort(byId(overlapPairs))
-			lowestPair := overlapPairs[0] // lowest Id one
-			splits = append(splits, lowestPair)
-			currentOffsets = ioPair.offsets[1]
-			i++
-			continue
-		}
-
-		// Not found overlap neighbours. Just apply itself
 		splits = append(splits, ioPair)
 		currentOffsets = ioPair.offsets[1]
 		i++

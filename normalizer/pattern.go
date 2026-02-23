@@ -1,11 +1,10 @@
 package normalizer
 
 import (
-	"log"
-	// "reflect"
 	"regexp"
+	"unicode/utf8"
 
-	"github.com/sugarme/tokenizer/util"
+	"github.com/dlclark/regexp2"
 )
 
 // Pattern is used to split a NormalizedString
@@ -55,7 +54,7 @@ func (r *RunePattern) FindMatches(inside string) []OffsetsMatch {
 
 	for byteIdx, char := range inside {
 		if char == r.rune {
-			nextIdx := byteIdx + len(string(char))
+			nextIdx := byteIdx + utf8.RuneLen(char)
 			// 1. Add previous unmatched if any
 			if hasPrevious {
 				prev := OffsetsMatch{Offsets: []int{prevStart, byteIdx}, Match: false}
@@ -89,16 +88,18 @@ func (r *RunePattern) FindMatches(inside string) []OffsetsMatch {
 // String is a wrapper of primitive string
 // so that it can implement `Pattern` interface
 type StringPattern struct {
-	string
+	s  string
+	re *regexp.Regexp
 }
 
 func NewStringPattern(s string) *StringPattern {
-	return &StringPattern{s}
+	quoted := regexp.QuoteMeta(s)
+	return &StringPattern{s: s, re: regexp.MustCompile(quoted)}
 }
 
 func (s *StringPattern) FindMatches(inside string) []OffsetsMatch {
 	// If we try to find the matches with an empty string, just don't match anything
-	if s.string == "" {
+	if s.s == "" {
 		return []OffsetsMatch{
 			{
 				Offsets: []int{0, len(inside)},
@@ -107,16 +108,10 @@ func (s *StringPattern) FindMatches(inside string) []OffsetsMatch {
 		}
 	}
 
-	quoted := regexp.QuoteMeta(s.string)
-
-	re := regexp.MustCompile(quoted)
-
-	return findMatches(re, inside)
+	return findMatches(s.re, inside)
 }
 
-func findMatches(re *regexp.Regexp, inside string) []OffsetsMatch {
-
-	matches := re.FindAllStringIndex(inside, -1)
+func buildMatchesFromIndices(matches [][]int, inside string) []OffsetsMatch {
 
 	// 0. If no matches, just return
 	if len(matches) == 0 {
@@ -184,14 +179,72 @@ func findMatches(re *regexp.Regexp, inside string) []OffsetsMatch {
 	return subs
 }
 
+func findMatches(re *regexp.Regexp, inside string) []OffsetsMatch {
+	matches := re.FindAllStringIndex(inside, -1)
+	return buildMatchesFromIndices(matches, inside)
+}
+
+func findMatchesRegexp2(re *regexp2.Regexp, inside string) []OffsetsMatch {
+	runeToByte := make([]int, 0, len(inside)+1)
+	for byteIdx := range inside {
+		runeToByte = append(runeToByte, byteIdx)
+	}
+	runeToByte = append(runeToByte, len(inside))
+
+	toByte := func(runeIdx int) int {
+		if runeIdx < 0 {
+			return 0
+		}
+		if runeIdx >= len(runeToByte) {
+			return len(inside)
+		}
+		return runeToByte[runeIdx]
+	}
+
+	indices := make([][]int, 0)
+	m, err := re.FindStringMatch(inside)
+	if err != nil {
+		return buildMatchesFromIndices(indices, inside)
+	}
+	for m != nil {
+		start := toByte(m.Index)
+		end := toByte(m.Index + m.Length)
+		indices = append(indices, []int{start, end})
+		m, err = re.FindNextMatch(m)
+		if err != nil {
+			break
+		}
+	}
+
+	return buildMatchesFromIndices(indices, inside)
+}
+
 type RegexpPattern struct {
-	re *regexp.Regexp
+	re     *regexp.Regexp
+	re2    *regexp2.Regexp
+	useRe2 bool
+	source string
 }
 
 func NewRegexpPattern(s string) *RegexpPattern {
-	re := regexp.MustCompile(s)
+	re, err := regexp.Compile(s)
+	if err == nil {
+		return &RegexpPattern{
+			re:     re,
+			useRe2: false,
+			source: s,
+		}
+	}
+
+	// Fallback for constructs unsupported by Go regexp (e.g. lookaheads).
+	re2, err2 := regexp2.Compile(s, regexp2.RE2)
+	if err2 != nil {
+		panic(err)
+	}
 	return &RegexpPattern{
-		re: re,
+		re2:    re2,
+		useRe2: true,
+		source: s,
 	}
 }
 
@@ -206,6 +259,9 @@ func (rp *RegexpPattern) FindMatches(inside string) []OffsetsMatch {
 		}
 	}
 
+	if rp.useRe2 {
+		return findMatchesRegexp2(rp.re2, inside)
+	}
 	return findMatches(rp.re, inside)
 }
 
@@ -239,7 +295,7 @@ func (fp *FnPattern) FindMatches(inside string) []OffsetsMatch {
 
 	for byteIdx, char := range inside {
 		if fp.fn(char) {
-			nextIdx := byteIdx + len(string(char))
+			nextIdx := byteIdx + utf8.RuneLen(char)
 			// 1. Add previous unmatched if any
 			if hasPrevious {
 				prev := OffsetsMatch{Offsets: []int{prevStart, byteIdx}, Match: false}
@@ -284,23 +340,7 @@ func NewInvertPattern(p Pattern) *Invert {
 
 // FindMatches implement Pattern interface for Invert
 func (i *Invert) FindMatches(inside string) []OffsetsMatch {
-	var matches []OffsetsMatch
-	typ := util.GetType(i.Pattern)
-	switch typ {
-	case "*StringPattern":
-		matches = i.Pattern.(*StringPattern).FindMatches(inside)
-	case "*RunePattern":
-		matches = i.Pattern.(*RunePattern).FindMatches(inside)
-	case "*FnPattern":
-		matches = i.Pattern.(*FnPattern).FindMatches(inside)
-	case "*RegexpPattern":
-		matches = i.Pattern.(*RegexpPattern).FindMatches(inside)
-
-	default:
-		log.Fatalf("Unsupported type - %q\n", typ)
-	}
-
-	return invert(matches)
+	return invert(i.Pattern.FindMatches(inside))
 }
 
 func invert(matches []OffsetsMatch) (retVal []OffsetsMatch) {
