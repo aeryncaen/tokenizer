@@ -540,6 +540,19 @@ func (t *Tokenizer) AddTokens(tokens []AddedToken) (retVal int) {
 	return t.addedVocabulary.AddTokens(tokens, t.model, t.normalizer)
 }
 
+// AddTokensWithIds registers tokens with explicit IDs, preserving
+// the exact ID assignments from the tokenizer.json rather than
+// computing new sequential IDs.
+func (t *Tokenizer) AddTokensWithIds(tokens []AddedTokenWithId) int {
+	return t.addedVocabulary.AddTokensWithIds(tokens, t.model, t.normalizer)
+}
+
+// GetAddedVocab returns only the added vocabulary (token -> id),
+// excluding the base model vocabulary.
+func (t *Tokenizer) GetAddedVocab() map[string]int {
+	return t.addedVocabulary.GetVocab()
+}
+
 // doNormalize does Normalization logic, go through all normalizers
 func (t *Tokenizer) doNormalize(s string) (retVal *normalizer.NormalizedString, err error) {
 	normalized := normalizer.NewNormalizedFrom(s)

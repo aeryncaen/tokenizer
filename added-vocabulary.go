@@ -554,6 +554,36 @@ type AddedTokenWithId struct {
 	Token   AddedToken // the target AddedToken
 }
 
+// AddTokensWithIds registers tokens with explicit IDs from the tokenizer.json,
+// preserving the exact ID assignments rather than computing new ones.
+// This is critical for tokenizers with compacted vocabularies where the
+// added_tokens array specifies exact ID values that must be respected.
+func (av *AddedVocabulary) AddTokensWithIds(tokenIds []AddedTokenWithId, model Model, normalizer normalizer.Normalizer) int {
+	added := 0
+	for _, ti := range tokenIds {
+		if ti.Token.Content == "" {
+			continue
+		}
+
+		// Register with the specified ID, unconditionally.
+		av.addedTokenMap[ti.Token.Content] = ti.Id
+		av.addedTokenMapR[ti.Id] = ti.Token.Content
+
+		if ti.Special {
+			if _, exists := av.specialTokensSet[ti.Token.Content]; !exists {
+				av.specialTokens = append(av.specialTokens, ti.Token)
+				av.specialTokensSet[ti.Token.Content] = true
+			}
+		} else {
+			av.addedTokens = append(av.addedTokens, ti.Token)
+		}
+		added++
+	}
+
+	av.refreshAddedTokens(model, normalizer)
+	return added
+}
+
 // Implement Serialize interface for AddedVocabular:
 // =================================================
 
