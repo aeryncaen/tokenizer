@@ -1,6 +1,7 @@
 package pretokenizer
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/sugarme/tokenizer"
@@ -16,7 +17,7 @@ import (
 // TODO: this RE does not cover the case with trailing whitespace!!!
 const splitRegStr = `'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+`
 
-var splitPattern = normalizer.NewRegexpPattern(splitRegStr)
+var splitRE = regexp.MustCompile(splitRegStr)
 
 var BytesChar map[uint8]string = GenerateBytesChar()
 
@@ -186,6 +187,7 @@ func (bl *ByteLevel) PreTokenize(pretokenized *tokenizer.PreTokenizedString) (*t
 			newNormalized = normalized.Prepend(" ")
 		}
 
+		splitPattern := normalizer.NewRegexpPattern(splitRegStr)
 		splits := newNormalized.Split(splitPattern, normalizer.IsolatedBehavior)
 
 		var splitIdx []tokenizer.SplitIdx

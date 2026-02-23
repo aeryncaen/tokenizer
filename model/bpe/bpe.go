@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 
 	// "strconv"
@@ -275,8 +276,9 @@ func (b *BPE) ReadFiles(vocabF string, mergesF string) (*model.Vocab, *Merges, e
 	for s.Scan() {
 		line := s.Text()
 
-		// Skip version header line.
-		if strings.HasPrefix(line, "#version") {
+		// Skip line with `#version`
+		re := regexp.MustCompile(`#version`)
+		if re.MatchString(line) {
 			continue
 		}
 

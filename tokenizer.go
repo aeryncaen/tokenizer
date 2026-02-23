@@ -641,17 +641,19 @@ func (t *Tokenizer) EncodeBatch(inputs []EncodeInput, addSpecialTokens bool) (re
 	var (
 		encodings []Encoding = make([]Encoding, len(inputs))
 		eg        errgroup.Group
+		mu        = &sync.Mutex{}
 	)
 
 	// Encoding concurrently
 	for i := range inputs {
-		i := i
 		eg.Go(func() error {
 			e, err := t.Encode(inputs[i], addSpecialTokens)
 			if err != nil {
 				return err
 			}
+			mu.Lock()
 			encodings[i] = *e
+			mu.Unlock()
 			return nil
 		})
 	}
@@ -670,7 +672,7 @@ func (t *Tokenizer) EncodeBatch(inputs []EncodeInput, addSpecialTokens bool) (re
 
 // DecodeBatch decodes all sentences in concurrency
 func (t *Tokenizer) DecodeBatch(sentences [][]int, skipSpecialTokens bool) []string {
-	decodings := make([]string, len(sentences))
+	var decodings []string
 	var wg sync.WaitGroup
 
 	wg.Add(len(sentences))
@@ -681,7 +683,7 @@ func (t *Tokenizer) DecodeBatch(sentences [][]int, skipSpecialTokens bool) []str
 			defer wg.Done()
 
 			s := t.Decode(sentences[i], skipSpecialTokens)
-			decodings[i] = s
+			decodings = append(decodings, s)
 		}(i)
 	}
 

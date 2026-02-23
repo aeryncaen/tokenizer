@@ -5,7 +5,6 @@ go 1.23.0
 toolchain go1.24.4
 
 require (
-	github.com/dlclark/regexp2 v1.11.5
 	github.com/emirpasic/gods v1.18.1
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/rivo/uniseg v0.4.7
