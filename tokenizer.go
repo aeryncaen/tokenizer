@@ -641,19 +641,17 @@ func (t *Tokenizer) EncodeBatch(inputs []EncodeInput, addSpecialTokens bool) (re
 	var (
 		encodings []Encoding = make([]Encoding, len(inputs))
 		eg        errgroup.Group
-		mu        = &sync.Mutex{}
 	)
 
 	// Encoding concurrently
 	for i := range inputs {
+		i := i
 		eg.Go(func() error {
 			e, err := t.Encode(inputs[i], addSpecialTokens)
 			if err != nil {
 				return err
 			}
-			mu.Lock()
 			encodings[i] = *e
-			mu.Unlock()
 			return nil
 		})
 	}
@@ -672,7 +670,7 @@ func (t *Tokenizer) EncodeBatch(inputs []EncodeInput, addSpecialTokens bool) (re
 
 // DecodeBatch decodes all sentences in concurrency
 func (t *Tokenizer) DecodeBatch(sentences [][]int, skipSpecialTokens bool) []string {
-	var decodings []string
+	decodings := make([]string, len(sentences))
 	var wg sync.WaitGroup
 
 	wg.Add(len(sentences))
@@ -683,7 +681,7 @@ func (t *Tokenizer) DecodeBatch(sentences [][]int, skipSpecialTokens bool) []str
 			defer wg.Done()
 
 			s := t.Decode(sentences[i], skipSpecialTokens)
-			decodings = append(decodings, s)
+			decodings[i] = s
 		}(i)
 	}
 
@@ -1100,6 +1098,36 @@ func (t *Tokenizer) EncodePair(input, pair string, addSpecialTokensOpt ...bool) 
 	encodeInput := NewDualEncodeInput(seq, pseq)
 
 	return t.Encode(encodeInput, addSpecialTokens)
+}
+
+// EncodeIDsOnly returns only the token IDs for the input string.
+// It is significantly faster than EncodeSingle because it skips offset
+// tracking inside NormalizedString (no per-byte alignment arrays) and
+// does not construct a full Encoding struct.
+// The returned IDs are identical to EncodeSingle(input).Ids when
+// addSpecialTokens is false and no truncation/padding is configured.
+func (t *Tokenizer) EncodeIDsOnly(input string) ([]int, error) {
+	pretokenized := t.addedVocabulary.ExtractAndNormalizeFast(input, t.normalizer)
+
+	if t.preTokenizer != nil {
+		var err error
+		pretokenized, err = t.preTokenizer.PreTokenize(pretokenized)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	_, err := pretokenized.Tokenize(func(n *normalizer.NormalizedString) ([]Token, error) {
+		if t.model == nil {
+			return nil, fmt.Errorf("Tokenizer.EncodeIDsOnly() failed: no Model set")
+		}
+		return t.model.Tokenize(n.GetNormalized())
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return pretokenized.IntoIDs()
 }
 
 // Tokenize slices input string into tokens.
