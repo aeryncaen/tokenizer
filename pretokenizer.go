@@ -5,6 +5,7 @@ package tokenizer
 import (
 	"fmt"
 	"log"
+	"unicode/utf8"
 	// "reflect"
 
 	"github.com/sugarme/tokenizer/normalizer"
@@ -160,7 +161,8 @@ func (pt *PreTokenizedString) IntoEncoding(typeId int, wordIdx int, offsetType O
 		currRuneIdx := 0
 		for byteIdx, r := range pt.original {
 			n := 0
-			for i := 0; i < len([]byte(string(r))); i++ {
+			runeLen := utf8.RuneLen(r)
+			for i := 0; i < runeLen; i++ {
 				charMap[byteIdx+n] = currRuneIdx
 				n += 1
 			}
@@ -322,7 +324,7 @@ func NewBytesToCharOffsetConverter(sequence string) *BytesToCharOffsetConverter 
 	b2c := make(map[int]int)
 	n := 0
 	for charIdx, char := range chars {
-		nbytes := len([]byte(string(char)))
+		nbytes := utf8.RuneLen(char)
 		for i := 0; i < nbytes; i++ {
 			byteIdx := n + i
 			b2c[byteIdx] = charIdx
